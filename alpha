@@ -1,0 +1,125 @@
+// Alpha Score & Slippage Tracker for 荃荃 ✨
+import { useState, useEffect } from 'react';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent } from '@/components/ui/card';
+import { format } from 'date-fns';
+import { Calendar } from '@/components/ui/calendar';
+
+export default function AlphaTracker() {
+  const [address, setAddress] = useState('');
+  const [data, setData] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  const fetchTxData = async () => {
+    if (!address) return;
+    const apiKey = 'VR9MERBZ9D9KQS1EIIGW4U5JWSGB91XDPE';
+    const url = `https://api.bscscan.com/api?module=account&action=tokentx&address=${address}&startblock=0&endblock=99999999&sort=desc&apikey=${apiKey}`;
+
+    try {
+      const res = await fetch(url);
+      const json = await res.json();
+      const transfers = json.result;
+
+      const buys = transfers.filter(tx => tx.to.toLowerCase() === address.toLowerCase());
+
+      const grouped = {};
+
+      for (const tx of buys) {
+        const date = format(new Date(tx.timeStamp * 1000), 'yyyy-MM-dd');
+        const token = tx.tokenSymbol;
+        const amount = parseFloat(tx.value) / 10 ** parseInt(tx.tokenDecimal);
+        const costUSD = amount * 0.00001 + 5 + Math.random(); // 模擬成本
+        const currentValueUSD = costUSD * (0.9 + Math.random() * 0.3); // 模擬現值
+
+        if (!grouped[date]) grouped[date] = [];
+        grouped[date].push({
+          date,
+          token,
+          amount,
+          costUSD,
+          currentValueUSD,
+        });
+      }
+
+      // 展平成陣列
+      const flatData = Object.values(grouped).flat();
+      setData(flatData);
+    } catch (e) {
+      console.error('Error fetching transactions:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (address.length === 42) {
+      fetchTxData();
+    }
+  }, [address]);
+
+  const calculateScore = (costUSD) => {
+    let baseScore = Math.floor(Math.log2(costUSD / 2 + 1));
+    return baseScore + 1; // 活動期間 +1 分
+  };
+
+  const calculateSlippage = (cost, value) => {
+    return (cost - value).toFixed(2);
+  };
+
+  const groupedData = data.reduce((acc, tx) => {
+    if (!acc[tx.date]) acc[tx.date] = [];
+    acc[tx.date].push(tx);
+    return acc;
+  }, {});
+
+  const filteredDates = selectedDate ? [format(selectedDate, 'yyyy-MM-dd')] : Object.keys(groupedData);
+
+  return (
+    <div className="p-6 max-w-3xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold">Binance Alpha 計分追蹤 ✨</h1>
+      <Input
+        placeholder="輸入錢包地址 例如 0xf74e...f6e"
+        value={address}
+        onChange={(e) => setAddress(e.target.value)}
+      />
+
+      <div>
+        <h2 className="mt-4 font-semibold">📅 選擇日期查看</h2>
+        <Calendar
+          mode="single"
+          selected={selectedDate}
+          onSelect={setSelectedDate}
+          className="rounded-md border w-fit"
+        />
+      </div>
+
+      {filteredDates.map((date) => (
+        <Card key={date} className="bg-white shadow rounded-xl">
+          <CardContent className="p-4">
+            <h2 className="text-xl font-semibold">📅 {date}</h2>
+            <table className="w-full mt-2 text-sm">
+              <thead>
+                <tr className="text-left">
+                  <th>代幣</th>
+                  <th>買入金額（U）</th>
+                  <th>現價總值（U）</th>
+                  <th>磨損（U）</th>
+                  <th>得分</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groupedData[date].map((tx, idx) => (
+                  <tr key={idx} className="border-t">
+                    <td>{tx.token}</td>
+                    <td>{tx.costUSD.toFixed(2)}</td>
+                    <td>{tx.currentValueUSD.toFixed(2)}</td>
+                    <td className="text-red-500">{calculateSlippage(tx.costUSD, tx.currentValueUSD)}</td>
+                    <td className="text-green-600">{calculateScore(tx.costUSD)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
